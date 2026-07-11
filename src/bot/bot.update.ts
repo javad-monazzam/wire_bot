@@ -179,7 +179,7 @@ export class BotUpdate {
     if (!user) return ctx.answerCbQuery('ابتدا دستور /start را ارسال کنید.');
 
     try {
-      await this.vpnConfigsService.removeConfig(configId, user.id);
+      await this.vpnConfigsService.removeConfig(configId);
       await ctx.answerCbQuery('کانفیگ حذف شد.');
       await ctx.editMessageText('🗑 این کانفیگ حذف شد.');
     } catch (err: any) {
