@@ -6,6 +6,7 @@ import { VpnConfigsService } from './vpn-configs.service';
 import { VpnApiClient } from './vpn-api.client';
 import { PlansModule } from '../plans/plans.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { VpnConfigsController } from './vpn-configs.controller';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { WalletModule } from '../wallet/wallet.module';
     PlansModule,
     WalletModule,
   ],
+  controllers:[VpnConfigsController],
   providers: [VpnConfigsService, VpnApiClient],
   exports: [VpnConfigsService],
 })

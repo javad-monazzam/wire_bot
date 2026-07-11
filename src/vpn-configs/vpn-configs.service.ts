@@ -43,7 +43,7 @@ export class VpnConfigsService {
       let rawConfig: string;
       const ip = plan.ip
       const domein = plan.domain
-      if (!ip||!domein) {
+      if (!ip || !domein) {
         throw new InternalServerErrorException(
           'برای این پلن IP سرور وایرگارد تنظیم نشده است.',
         );
@@ -115,13 +115,65 @@ export class VpnConfigsService {
     });
   }
 
-  async removeConfig(configId: number, userId?: number): Promise<void> {
-    const where: any = { id: configId };
+  // تمدید سرویس
+  async renewConfig(userId: number, configId: number): Promise<VpnConfig> {
+    console.log(userId,configId);
+    
+    return this.dataSource.transaction(async (manager) => {
 
-    if (userId) {
-      where.userId = userId;
-    }
+      // پیدا کردن کانفیگ کاربر
+      const config = await manager.findOne(VpnConfig, {
+        where: {
+          id: configId,
+          userId,
+        },
+      });
 
+      if (!config?.planId) {
+        throw new NotFoundException('کانفیگ پیدا نشد.');
+      }
+
+
+      // پیدا کردن پلن
+      const plan = await this.plansService.findActiveById(config.planId);
+
+      if (!plan) {
+        throw new NotFoundException('پلن این کانفیگ موجود نیست.');
+      }
+
+
+      // کم کردن مبلغ از کیف پول
+      await this.walletService.debit(
+        userId,
+        Number(plan.price),
+        `تمدید پلن ${plan.name}`,
+        manager,
+      );
+
+
+      // افزایش تاریخ انقضا
+      const oldExpire =
+        config.expiresAt && config.expiresAt > new Date()
+          ? new Date(config.expiresAt)
+          : new Date();
+
+      if (plan.validityDays)
+        oldExpire.setDate(
+          oldExpire.getDate() + plan.validityDays
+        );
+
+
+      config.expiresAt = oldExpire;
+
+
+      return await manager.save(VpnConfig, config);
+    });
+  }
+
+
+  // delete config
+  async removeConfig(Id: number): Promise<void> {
+    const where: any = { id: Id };
     const config = await this.repo.findOne({ where });
 
     if (!config) {
@@ -134,16 +186,16 @@ export class VpnConfigsService {
 
     const publicKey = config.publicKey;
 
-    console.log(config.planId, '<<<< remove');
 
-    if (config.planId) {
+    if (!config?.planId ){ throw new NotFoundException('کانفیگ یافت نشد.');} 
       const plan = await this.plansService.findActiveById(config.planId);
 
       const ip = plan?.ip
-      if (ip) {
-        await this.vpnApiClient.removePeer(publicKey, ip);
+      if (!ip) {
+       throw new NotFoundException('کانفیگ یافت نشد.');
       }
-    }
+      await this.vpnApiClient.removePeer(publicKey, ip);
+    
 
     config.status = VpnConfigStatus.REMOVED;
     await this.repo.save(config);
@@ -151,6 +203,11 @@ export class VpnConfigsService {
   findUserConfigs(userId: number): Promise<VpnConfig[]> {
     return this.repo.find({ where: { userId }, order: { createdAt: 'DESC' } });
   }
+async findConfig(id: number): Promise<VpnConfig | null> {
+  return this.repo.findOne({
+    where: { id },
+  });
+}
 
   findAllActive(): Promise<VpnConfig[]> {
     return this.repo.find({
@@ -169,6 +226,6 @@ export class VpnConfigsService {
       return result;
     }
     const rand = randomTitle();
-    return `w${rand}`;
+    return `${rand}`;
   }
 }

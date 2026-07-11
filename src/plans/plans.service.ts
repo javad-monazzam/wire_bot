@@ -25,6 +25,9 @@ export class PlansService {
   findActiveById(id: number): Promise<Plan | null> {
     return this.repo.findOne({ where: { id, isActive: true } });
   }
+  findPlanById(id: number): Promise<Plan | null> {
+    return this.repo.findOne({ where: { id } });
+  }
 
   async create(input: CreatePlanInput): Promise<Plan> {
     const plan = this.repo.create({

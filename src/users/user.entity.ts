@@ -14,9 +14,9 @@ export class User {
   id: number;
 
   // شناسه عددی تلگرام کاربر (به‌صورت رشته ذخیره می‌شود تا از مشکلات دقت عددی جلوگیری شود)
-  @Column({ unique: true })
+  @Column({ type: 'bigint' })
   telegramId: number;
-
+  
   @Column({ nullable: true })
   username?: string;
 

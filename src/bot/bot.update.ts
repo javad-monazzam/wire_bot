@@ -7,7 +7,7 @@ import { VpnConfigsService } from '../vpn-configs/vpn-configs.service';
 import { WalletService } from '../wallet/wallet.service';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { VpnConfigStatus } from '../vpn-configs/vpn-config.entity';
-
+import QRCode from 'qrcode';
 const fmt = (n: number | string) => Number(n).toLocaleString('fa-IR');
 
 const MAIN_MENU = Markup.keyboard([
@@ -22,7 +22,7 @@ export class BotUpdate {
     private readonly plansService: PlansService,
     private readonly vpnConfigsService: VpnConfigsService,
     private readonly walletService: WalletService,
-  ) {}
+  ) { }
 
   // ===================== کاربر عادی =====================
 
@@ -36,9 +36,9 @@ export class BotUpdate {
     );
     await ctx.reply(
       `سلام ${tgUser.first_name || ''} 👋\n` +
-        `به ربات فروش کانفیگ خوش آمدید.\n\n` +
-        `🆔 شناسه عددی شما: ${tgUser.id}\n` +
-        `برای شارژ کیف پول، این شناسه را برای ادمین ارسال کنید.`,
+      `به ربات فروش کانفیگ خوش آمدید.\n\n` +
+      `🆔 شناسه عددی شما: ${tgUser.id}\n` +
+      `برای شارژ کیف پول، این شناسه را برای ادمین ارسال کنید.`,
       MAIN_MENU,
     );
   }
@@ -50,8 +50,8 @@ export class BotUpdate {
 
     await ctx.reply(
       `👤 حساب کاربری\n` +
-        `🆔 شناسه عددی: ${user.telegramId}\n` +
-        `💰 موجودی کیف پول: ${fmt(user.balance)} تومان`,
+      `🆔 شناسه عددی: ${user.telegramId}\n` +
+      `💰 موجودی کیف پول: ${fmt(user.balance)} تومان`,
     );
   }
 
@@ -108,6 +108,14 @@ export class BotUpdate {
           { source: Buffer.from(config.rawConfig, 'utf-8'), filename: `${config.publicKey}.conf` },
           { caption: `کانفیگ شما (${config.publicKey}) آماده است.` },
         );
+        const qrBuffer = await QRCode.toBuffer(config.rawConfig);
+
+        await ctx.replyWithPhoto(
+          { source: qrBuffer },
+          {
+            caption: `QR Code کانفیگ ${config.publicKey}`,
+          },
+        );
       } else {
         await ctx.reply(`کانفیگ شما با شناسه ${config.publicKey} ساخته شد.`);
       }
@@ -122,24 +130,43 @@ export class BotUpdate {
     if (!user) return ctx.reply('لطفا ابتدا دستور /start را ارسال کنید.');
 
     const configs = await this.vpnConfigsService.findUserConfigs(user.id);
+
+
     if (!configs.length) {
       return ctx.reply('شما هنوز هیچ کانفیگی نخریده‌اید.');
     }
 
     for (const c of configs) {
       const statusEmoji = c.status === VpnConfigStatus.ACTIVE ? '🟢 فعال' : '🔴 حذف‌شده';
+
+      const now = new Date();
+      if (!c.expiresAt) {
+        return
+      }
+      const expiresAt = new Date(c.expiresAt);
+
+      const remainingDays = Math.max(
+        0,
+        Math.ceil(
+          (expiresAt.getTime() - now.getTime()) /
+          (1000 * 60 * 60 * 24)
+        )
+      );
+
+      const createdAt = new Date(c.createdAt);
+      const expireDate = new Date(createdAt);
       const buttons =
         c.status === VpnConfigStatus.ACTIVE
           ? Markup.inlineKeyboard([
-              Markup.button.callback('🗑 حذف این کانفیگ', `remove_config:${c.id}`),
-            ])
+            Markup.button.callback('🗑 حذف   کانفیگ', `remove_config:${c.id}`),
+            Markup.button.callback(' تمدید  کانفیگ', `renewal_config:${c.id}`),
+            Markup.button.callback('📱 QR Code', `qr_config:${c.id}`)
+          ])
           : undefined;
 
       await ctx.reply(
-        `${statusEmoji}\n` +
-          `شناسه: ${c.publicKey}\n` +
-          `تاریخ خرید: ${c.createdAt.toLocaleDateString('fa-IR')}\n` +
-          `قیمت: ${fmt(c.pricePaid)} تومان`,
+        `${statusEmoji}                               شناسه: ${c.publicKey}\n` +
+        `تاریخ خرید: ${c.createdAt.toLocaleDateString('fa-IR')}           روزهای باقی‌مانده: ${remainingDays}\n`,
         buttons,
       );
     }
@@ -159,12 +186,63 @@ export class BotUpdate {
       await ctx.answerCbQuery('خطا در حذف کانفیگ.');
     }
   }
+  // تمدید
+  @Action(/^renewal_config:(.+)$/)
+  async renewalConfigHandler(@Ctx() ctx: any) {
+    const configId = Number(ctx.match[1]);
 
-  @Hears('📞 ارتباط با ادمین')
-  async contactAdmin(@Ctx() ctx: Context) {
-    await ctx.reply(
-      'برای شارژ کیف پول یا پشتیبانی، با ادمین در ارتباط باشید: @your_admin_username',
+    const user = await this.usersService.findByTelegramId(
+      ctx.from.id.toString(),
     );
+
+    if (!user) {
+      return ctx.answerCbQuery('ابتدا دستور /start را ارسال کنید.');
+    }
+
+    try {
+      const config = await this.vpnConfigsService.renewConfig(
+        user.id,
+        configId,
+      );
+
+      await ctx.answerCbQuery('کانفیگ تمدید شد.');
+
+      await ctx.editMessageText(
+        `✅ کانفیگ تمدید شد
+
+📅 تاریخ انقضای جدید:
+${config.expiresAt?.toLocaleDateString('fa-IR')}`
+      );
+
+    } catch (err: any) {
+      await ctx.answerCbQuery(
+        err?.message || 'خطا در تمدید کانفیگ'
+      );
+    }
+  }
+
+  // بارکد
+  @Action(/^qr_config:(.+)$/)
+  async qrConfig(@Ctx() ctx: any) {
+
+    const configId = Number(ctx.match[1]);
+
+    const config = await this.vpnConfigsService.findConfig(configId);
+
+    if (!config) {
+      return ctx.answerCbQuery('کانفیگ پیدا نشد');
+    }
+
+    const qrBuffer = await QRCode.toBuffer(config.rawConfig);
+
+    await ctx.replyWithPhoto(
+      { source: qrBuffer },
+      {
+        caption: `QR Code کانفیگ ${config.publicKey}`,
+      },
+    );
+
+    await ctx.answerCbQuery();
   }
 
   // ===================== دستورات ادمین =====================
@@ -200,7 +278,7 @@ export class BotUpdate {
 
     await ctx.reply(
       `✅ کیف پول کاربر ${telegramId} به مقدار ${fmt(amount)} تومان شارژ شد.\n` +
-        `موجودی جدید: ${fmt(updated.balance)} تومان`,
+      `موجودی جدید: ${fmt(updated.balance)} تومان`,
     );
   }
 
@@ -215,7 +293,7 @@ export class BotUpdate {
     if (!name || !price || isNaN(Number(price))) {
       return ctx.reply(
         'فرمت صحیح:\n/addplan نام پلن|قیمت|روز اعتبار|توضیحات\n' +
-          'مثال:\n/addplan یک ماهه|80000|30|کانفیگ یک ماهه پرسرعت',
+        'مثال:\n/addplan یک ماهه|80000|30|کانفیگ یک ماهه پرسرعت',
       );
     }
 
@@ -272,8 +350,8 @@ export class BotUpdate {
     const configs = await this.vpnConfigsService.findUserConfigs(user.id);
     await ctx.reply(
       `👤 ${user.username ? '@' + user.username : telegramId}\n` +
-        `موجودی: ${fmt(user.balance)} تومان\n` +
-        `تعداد کانفیگ‌ها: ${configs.length}`,
+      `موجودی: ${fmt(user.balance)} تومان\n` +
+      `تعداد کانفیگ‌ها: ${configs.length}`,
     );
   }
 }
