@@ -5,16 +5,13 @@ import { firstValueFrom } from 'rxjs';
 import { Plan } from 'src/plans/plan.entity';
 
 /**
- * این کلاینت با دو endpoint سرور خارجی شما صحبت می‌کند:
- *   GET {VPN_API_BASE_URL}/create?publicKey=NAME
- *   GET {VPN_API_BASE_URL}/remove?publicKey=NAME
+ * این کلاینت با endpointهای کنترلر NestJS شما (که روی سرور VPN، پورت 9800 اجرا می‌شود) صحبت می‌کند:
+ *   GET {ip}:9800/vpn/create?publicKey=NAME
+ *   GET {ip}:9800/vpn/remove?publicKey=NAME
+ *   GET {ip}:9800/vpn/activate?publicKey=NAME
+ *   GET {ip}:9800/vpn/deactivate?publicKey=NAME
  *
- * ⚠️ نکته مهم: چون فرمت دقیق پاسخ این دو endpoint مشخص نبود، فعلاً فرض شده که:
- *   - پاسخ /create یا متن خام کانفیگ است یا JSON که در صورت نیاز باید این متد
- *     طبق فرمت واقعی اصلاح شود (مثلاً اگر پاسخ { config: "...", filePath: "..." } بود).
- *   - پاسخ /remove فقط برای موفقیت/خطا بررسی می‌شود و محتوایش استفاده نمی‌شود.
- * اگر بعد از تست فرمت واقعی را فهمیدید، فقط همین فایل را اصلاح کنید؛ بقیه پروژه
- * به این جزئیات وابسته نیست.
+ * ⚠️ نکته: پاسخ /vpn/create متن خام کانفیگ (Content-Type: text/plain) است.
  */
 @Injectable()
 export class VpnApiClient {
@@ -27,7 +24,7 @@ export class VpnApiClient {
   }
 
   async createPeer(publicKey: string, ip: string): Promise<string> {
-    const url = `http://${ip}:9800/create`;
+    const url = `http://${ip}:9800/vpn/create`;
     this.logger.log(`Calling create API => ${url}?publicKey=${publicKey}`);
 
     const response = await firstValueFrom(
@@ -43,10 +40,24 @@ export class VpnApiClient {
 
   async removePeer(publicKey: string ,ip:string
   ): Promise<void> {
-    const url = `http://${ip}:9800/remove`;
+    const url = `http://${ip}:9800/vpn/remove`;
     this.logger.log(`Calling remove API => ${url}?publicKey=${publicKey}`);
     await firstValueFrom(this.http.get(url, { params: { publicKey } }));
 
     return
+  }
+
+  // غیرفعال کردن کاربر روی سرور (comment کردن بلاک پیر در wg0.conf) — بدون حذف کامل
+  async deactivatePeer(publicKey: string, ip: string): Promise<void> {
+    const url = `http://${ip}:9800/vpn/deactivate`;
+    this.logger.log(`Calling deactivate API => ${url}?publicKey=${publicKey}`);
+    await firstValueFrom(this.http.get(url, { params: { publicKey } }));
+  }
+
+  // فعال کردن دوباره کاربر روی سرور (uncomment کردن بلاک پیر) — مثلا بعد از تمدید
+  async activatePeer(publicKey: string, ip: string): Promise<void> {
+    const url = `http://${ip}:9800/vpn/activate`;
+    this.logger.log(`Calling activate API => ${url}?publicKey=${publicKey}`);
+    await firstValueFrom(this.http.get(url, { params: { publicKey } }));
   }
 }

@@ -11,6 +11,9 @@ import { Plan } from '../plans/plan.entity';
 
 export enum VpnConfigStatus {
   ACTIVE = 'active',
+  // تاریخ انقضا گذشته و روی سرور غیرفعال (comment) شده، ولی هنوز حذف نشده
+  // (در دوره‌ی مهلت ۵ روزه‌ست؛ اگر کاربر تمدید کند دوباره ACTIVE می‌شود)
+  EXPIRED = 'expired',
   REMOVED = 'removed',
 }
 

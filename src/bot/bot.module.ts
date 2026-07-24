@@ -7,6 +7,7 @@ import { PlansModule } from '../plans/plans.module';
 import { VpnConfigsModule } from '../vpn-configs/vpn-configs.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { AdminGuard } from 'src/common/guards/admin.guard';
+import { VpnExpiryNotifierCron } from './vpn-expiry-notifier.cron';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AdminGuard } from 'src/common/guards/admin.guard';
   providers: [
     BotUpdate,
     AdminGuard,
+    VpnExpiryNotifierCron,
   ],
 })
 export class BotModule { }

@@ -1,17 +1,22 @@
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, LessThan, Repository } from 'typeorm';
 import { VpnConfig, VpnConfigStatus } from './vpn-config.entity';
 import { PlansService } from '../plans/plans.service';
 import { WalletService } from '../wallet/wallet.service';
 import { VpnApiClient } from './vpn-api.client';
 
+const GRACE_DAYS_BEFORE_DELETE = 5;
+
 @Injectable()
 export class VpnConfigsService {
+  private readonly logger = new Logger(VpnConfigsService.name);
+
   constructor(
     @InjectRepository(VpnConfig) private readonly repo: Repository<VpnConfig>,
     private readonly plansService: PlansService,
@@ -119,7 +124,7 @@ export class VpnConfigsService {
   async renewConfig(userId: number, configId: number): Promise<VpnConfig> {
     console.log(userId,configId);
     
-    return this.dataSource.transaction(async (manager) => {
+    const renewedConfig = await this.dataSource.transaction(async (manager) => {
 
       // پیدا کردن کانفیگ کاربر
       const config = await manager.findOne(VpnConfig, {
@@ -133,9 +138,16 @@ export class VpnConfigsService {
         throw new NotFoundException('کانفیگ پیدا نشد.');
       }
 
+      // اگر قبلا کامل از روی سرور حذف شده، دیگه چیزی برای تمدید روی سرور وجود نداره
+      if (config.status === VpnConfigStatus.REMOVED) {
+        throw new NotFoundException(
+          'این اکانت قبلا به‌طور کامل حذف شده و قابل تمدید نیست؛ لطفا یک سرویس جدید خریداری کنید.',
+        );
+      }
 
-      // پیدا کردن پلن
-      const plan = await this.plansService.findActiveById(config.planId);
+      // پیدا کردن پلن (findPlanById نه findActiveById، چون حتی اگر پلن غیرفعال شده باشد
+      // باید بتوانیم برای فعال‌سازی مجدد روی سرور، IP آن را پیدا کنیم)
+      const plan = await this.plansService.findPlanById(config.planId);
 
       if (!plan) {
         throw new NotFoundException('پلن این کانفیگ موجود نیست.');
@@ -165,9 +177,18 @@ export class VpnConfigsService {
 
       config.expiresAt = oldExpire;
 
+      // اگر قبلا به‌خاطر انقضا روی سرور غیرفعال شده بود، بعد از تمدید موفق دوباره فعالش کن
+      if (config.status === VpnConfigStatus.EXPIRED) {
+        if (plan.ip) {
+          await this.vpnApiClient.activatePeer(config.publicKey, plan.ip);
+        }
+        config.status = VpnConfigStatus.ACTIVE;
+      }
 
       return await manager.save(VpnConfig, config);
     });
+
+    return renewedConfig;
   }
 
 
@@ -188,7 +209,7 @@ export class VpnConfigsService {
 
 
     if (!config?.planId ){ throw new NotFoundException('کانفیگ یافت نشد.');} 
-      const plan = await this.plansService.findActiveById(config.planId);
+      const plan = await this.plansService.findPlanById(config.planId);
 
       const ip = plan?.ip
       if (!ip) {
@@ -214,6 +235,97 @@ async findConfig(id: number): Promise<VpnConfig | null> {
       where: { status: VpnConfigStatus.ACTIVE },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  // اکانت‌های ACTIVE که تاریخ انقضایشان گذشته را روی سرور غیرفعال می‌کند
+  // و لیست کانفیگ‌هایی که با موفقیت غیرفعال شدند را برمی‌گرداند (به‌همراه relation کاربر،
+  // تا لایه‌ی بات بتواند برایشان پیام تلگرام بفرستد)
+  async findAndDeactivateExpired(): Promise<VpnConfig[]> {
+    const now = new Date();
+
+    const expired = await this.repo.find({
+      where: {
+        status: VpnConfigStatus.ACTIVE,
+        expiresAt: LessThan(now),
+      },
+      relations: ['user'],
+    });
+
+    if (expired.length === 0) return [];
+    this.logger.log(`${expired.length} اکانت منقضی‌شده برای غیرفعال‌سازی پیدا شد`);
+
+    const deactivated: VpnConfig[] = [];
+
+    for (const config of expired) {
+      try {
+        // findPlanById (نه findActiveById) تا حتی اگر ادمین بعدا پلن را غیرفعال کرده باشد،
+        // همچنان بتوانیم ip سرور را برای غیرفعال‌سازی پیدا کنیم
+        const plan = await this.plansService.findPlanById(config.planId as number);
+        if (!plan?.ip) {
+          this.logger.warn(
+            `کانفیگ #${config.id} (${config.publicKey}): پلن یا IP سرور پیدا نشد، رد شد`,
+          );
+          continue;
+        }
+
+        await this.vpnApiClient.deactivatePeer(config.publicKey, plan.ip);
+        config.status = VpnConfigStatus.EXPIRED;
+        await this.repo.save(config);
+        deactivated.push(config);
+        this.logger.log(`کانفیگ #${config.id} (${config.publicKey}) غیرفعال شد`);
+      } catch (err) {
+        // خطای یک کانفیگ نباید مانع پردازش بقیه شود
+        this.logger.error(
+          `خطا در غیرفعال‌سازی کانفیگ #${config.id} (${config.publicKey})`,
+          err as any,
+        );
+      }
+    }
+
+    return deactivated;
+  }
+
+  // اکانت‌های EXPIRED که بیش از ۵ روز از تاریخ انقضایشان گذشته را کامل حذف می‌کند
+  async findAndDeleteLongExpired(): Promise<VpnConfig[]> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - GRACE_DAYS_BEFORE_DELETE);
+
+    const toDelete = await this.repo.find({
+      where: {
+        status: VpnConfigStatus.EXPIRED,
+        expiresAt: LessThan(cutoff),
+      },
+      relations: ['user'],
+    });
+
+    if (toDelete.length === 0) return [];
+    this.logger.log(
+      `${toDelete.length} اکانت برای حذف کامل (بیش از ${GRACE_DAYS_BEFORE_DELETE} روز از انقضا) پیدا شد`,
+    );
+
+    const deleted: VpnConfig[] = [];
+
+    for (const config of toDelete) {
+      try {
+        const plan = await this.plansService.findPlanById(config.planId as number);
+        if (!plan?.ip) {
+          this.logger.warn(
+            `کانفیگ #${config.id} (${config.publicKey}): پلن یا IP سرور پیدا نشد، رد شد`,
+          );
+          continue;
+        }
+
+        await this.vpnApiClient.removePeer(config.publicKey, plan.ip);
+        config.status = VpnConfigStatus.REMOVED;
+        await this.repo.save(config);
+        deleted.push(config);
+        this.logger.log(`کانفیگ #${config.id} (${config.publicKey}) کامل حذف شد`);
+      } catch (err) {
+        this.logger.error(`خطا در حذف کانفیگ #${config.id} (${config.publicKey})`, err as any);
+      }
+    }
+
+    return deleted;
   }
 
   private generatePublicKey(): string {
