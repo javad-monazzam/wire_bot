@@ -5,11 +5,6 @@ import { firstValueFrom } from 'rxjs';
 import { Plan } from 'src/plans/plan.entity';
 
 /**
- * این کلاینت با endpointهای کنترلر NestJS شما (که روی سرور VPN، پورت 9800 اجرا می‌شود) صحبت می‌کند:
- *   GET {ip}:9800/vpn/create?publicKey=NAME
- *   GET {ip}:9800/vpn/remove?publicKey=NAME
- *   GET {ip}:9800/vpn/activate?publicKey=NAME
- *   GET {ip}:9800/vpn/deactivate?publicKey=NAME
  *
  * ⚠️ نکته: پاسخ /vpn/create متن خام کانفیگ (Content-Type: text/plain) است.
  */
@@ -24,7 +19,7 @@ export class VpnApiClient {
   }
 
   async createPeer(publicKey: string, ip: string): Promise<string> {
-    const url = `http://${ip}:9800/vpn/create`;
+    const url = `http://${ip}:4500/vpn/create`;
     this.logger.log(`Calling create API => ${url}?publicKey=${publicKey}`);
 
     const response = await firstValueFrom(
@@ -40,7 +35,7 @@ export class VpnApiClient {
 
   async removePeer(publicKey: string ,ip:string
   ): Promise<void> {
-    const url = `http://${ip}:9800/vpn/remove`;
+    const url = `http://${ip}:4500/vpn/remove`;
     this.logger.log(`Calling remove API => ${url}?publicKey=${publicKey}`);
     await firstValueFrom(this.http.get(url, { params: { publicKey } }));
 
@@ -49,14 +44,14 @@ export class VpnApiClient {
 
   // غیرفعال کردن کاربر روی سرور (comment کردن بلاک پیر در wg0.conf) — بدون حذف کامل
   async deactivatePeer(publicKey: string, ip: string): Promise<void> {
-    const url = `http://${ip}:9800/vpn/deactivate`;
+    const url = `http://${ip}:4500/vpn/deactivate`;
     this.logger.log(`Calling deactivate API => ${url}?publicKey=${publicKey}`);
     await firstValueFrom(this.http.get(url, { params: { publicKey } }));
   }
 
   // فعال کردن دوباره کاربر روی سرور (uncomment کردن بلاک پیر) — مثلا بعد از تمدید
   async activatePeer(publicKey: string, ip: string): Promise<void> {
-    const url = `http://${ip}:9800/vpn/activate`;
+    const url = `http://${ip}:4500/vpn/activate`;
     this.logger.log(`Calling activate API => ${url}?publicKey=${publicKey}`);
     await firstValueFrom(this.http.get(url, { params: { publicKey } }));
   }
