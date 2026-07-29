@@ -10,7 +10,7 @@ export class TasksService {
     private readonly vpnConfigsService: VpnConfigsService,
     private readonly planService: PlansService,
   ) { }
-  @Cron('0 47 * * * *', {
+  @Cron('0 0 3 * * *', {
     timeZone: 'Asia/Tehran',
   })
   async handleCron() {
@@ -26,18 +26,16 @@ export class TasksService {
       }
       const today = new Date()
       if (config.expiresAt < today) {
-        
+
         const plan = await this.planService.findPlanById(config?.planId)
-        console.log(plan?.ip);
-        const res = await axios.get(
+         await axios.get(
           `http://${plan?.ip}:5500/disable?publicKey=${config.publicKey}`,
         );
-        console.log(res);
-        const delete_service = await axios.get(
+         await axios.get(
           `http://${plan?.ip}:5500/vpn/remove?publicKey=${config.publicKey}`,
         );
 
-        console.log('Expired:', config.expiresAt, today, config.publicKey);
+        console.log('Expired:', config.expiresAt, today, config.publicKey,"delete");
 
       }
     }
