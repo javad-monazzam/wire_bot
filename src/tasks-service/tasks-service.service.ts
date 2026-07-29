@@ -10,7 +10,7 @@ export class TasksService {
     private readonly vpnConfigsService: VpnConfigsService,
     private readonly planService: PlansService,
   ) { }
-  @Cron('0 5 * * * *', {
+  @Cron('0 25 * * * *', {
     timeZone: 'Asia/Tehran',
   })
   async handleCron() {
@@ -19,6 +19,7 @@ export class TasksService {
     const services = await this.vpnConfigsService.findAllActive();
 
     for (let index = 0; index < services.length; index++) {
+      
       const config = services[index];
 
       if (!config.expiresAt || !config.planId) {
