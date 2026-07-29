@@ -10,7 +10,7 @@ export class TasksService {
     private readonly vpnConfigsService: VpnConfigsService,
     private readonly planService: PlansService,
   ) { }
-  @Cron('0 25 * * * *', {
+  @Cron('0 0 18 * * *', {
     timeZone: 'Asia/Tehran',
   })
   async handleCron() {
