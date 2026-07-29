@@ -28,14 +28,14 @@ export class TasksService {
       if (config.expiresAt < today) {
 
         const plan = await this.planService.findPlanById(config?.planId)
-         await axios.get(
+        await axios.get(
           `http://${plan?.ip}:5500/disable?publicKey=${config.publicKey}`,
         );
-         await axios.get(
+        await axios.get(
           `http://${plan?.ip}:5500/vpn/remove?publicKey=${config.publicKey}`,
         );
-
-        console.log('Expired:', config.expiresAt, today, config.publicKey,"delete");
+        await this.vpnConfigsService.removeConfig(config.id)
+        console.log('Expired:', config.expiresAt, today, config.publicKey, "delete");
 
       }
     }

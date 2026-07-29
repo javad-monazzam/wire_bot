@@ -215,7 +215,7 @@ export class VpnConfigsService {
       if (!ip) {
        throw new NotFoundException('کانفیگ یافت نشد.');
       }
-      await this.vpnApiClient.removePeer(publicKey, ip);
+      // await this.vpnApiClient.removePeer(publicKey, ip);
     
 
     config.status = VpnConfigStatus.REMOVED;
