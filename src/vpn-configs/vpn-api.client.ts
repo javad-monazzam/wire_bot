@@ -35,7 +35,7 @@ export class VpnApiClient {
 
   async removePeer(publicKey: string ,ip:string
   ): Promise<void> {
-    const url = `http://${ip}:4500/vpn/remove`;
+    const url = `http://${ip}:5500/vpn/remove`;
     this.logger.log(`Calling remove API => ${url}?publicKey=${publicKey}`);
     await firstValueFrom(this.http.get(url, { params: { publicKey } }));
 

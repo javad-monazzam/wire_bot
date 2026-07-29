@@ -8,6 +8,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { PlansModule } from './plans/plans.module';
 import { VpnConfigsModule } from './vpn-configs/vpn-configs.module';
 import { BotModule } from './bot/bot.module';
+import { TasksServiceModule } from './tasks-service/tasks-service.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { BotModule } from './bot/bot.module';
     UsersModule,
     WalletModule,
     PlansModule,
+    TasksServiceModule,
     VpnConfigsModule,
     BotModule,
   ],
